@@ -41,7 +41,7 @@ type NavItem = {
 const userNav: NavItem[] = [
   { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { label: "My Certificates", href: "/dashboard/certificates", icon: BadgeCheck },
-  { label: "Verify Certificate", href: "/verify", icon: FileText },
+  { label: "Verify Certificate", href: "/dashboard/verify", icon: FileText },
   { label: "Profile", href: "/dashboard/profile", icon: UserCircle2 },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ];

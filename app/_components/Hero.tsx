@@ -1,3 +1,5 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -15,7 +17,7 @@ const features = [
   {
     title: "Excel Import for Admins",
     description:
-      "Upload Excel files once and let Certivo handle structured, validated storage in MongoDB.",
+      "Upload Excel files once and let Certivo handle structured, validated storage in the system.",
   },
   {
     title: "Secure & Trusted",
@@ -24,7 +26,92 @@ const features = [
   },
 ];
 
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function LandingPage() {
+  const [code, setCode] = React.useState("");
+  const [isVerifying, setIsVerifying] = React.useState(false);
+  const [verifyError, setVerifyError] = React.useState<string | null>(null);
+  const [verifyResult, setVerifyResult] = React.useState<null | {
+    code: string;
+    holderName: string;
+    program: string;
+    organizationName?: string | null;
+    durationText?: string | null;
+    status?: string;
+    issuedAt?: string | null;
+    verifiedAt?: string | null;
+  }>(null);
+
+  async function handleVerify() {
+    const trimmed = code.trim();
+
+    if (!trimmed) {
+      setVerifyError("Please enter a Certificate ID.");
+      setVerifyResult(null);
+      return;
+    }
+
+    try {
+      setIsVerifying(true);
+      setVerifyError(null);
+      setVerifyResult(null);
+
+      const res = await fetch(
+        `/api/verify?code=${encodeURIComponent(trimmed)}`,
+        {
+          method: "GET",
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok || !data.found) {
+        setVerifyError(
+          data?.message ||
+            "No certificate found for this ID. Please check and try again."
+        );
+        return;
+      }
+
+      setVerifyResult(data.certificate);
+    } catch (error) {
+      console.error("verify error:", error);
+      setVerifyError(
+        "Something went wrong while verifying. Please try again in a moment."
+      );
+    } finally {
+      setIsVerifying(false);
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void handleVerify();
+    }
+  }
+
+  const statusLabel =
+    verifyResult?.status === "verified"
+      ? { text: "Verified", tone: "verified" as const }
+      : verifyResult?.status === "rejected"
+      ? { text: "Rejected", tone: "rejected" as const }
+      : verifyResult?.status === "pending"
+      ? { text: "Pending", tone: "pending" as const }
+      : verifyResult
+      ? { text: "Active", tone: "verified" as const }
+      : null;
+
   return (
     <main
       className={cn(
@@ -57,7 +144,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          {/* Quick verify form (UI only) */}
+          {/* Quick verify form */}
           <div className="mt-2 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white/70 p-3 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/70">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Quick Certificate Lookup
@@ -66,17 +153,113 @@ export default function LandingPage() {
               <Input
                 placeholder="Enter Certificate ID"
                 className="bg-white/90 text-sm dark:bg-slate-900/80"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={isVerifying}
               />
               <Button
                 className="w-full bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 sm:w-auto"
+                onClick={handleVerify}
+                disabled={isVerifying}
               >
-                Verify Now
+                {isVerifying ? "Verifying..." : "Verify Now"}
               </Button>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              For demo purposes, this search is UI-only. Connect it to your API
-              to enable live verification.
-            </p>
+            {verifyError && (
+              <p className="text-xs font-medium text-red-600 dark:text-red-400">
+                {verifyError}
+              </p>
+            )}
+            {!verifyError && !verifyResult && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Enter your Certificate ID to instantly verify and view basic
+                details of your internship certificate.
+              </p>
+            )}
+
+            {verifyResult && (
+              <div className="mt-2 rounded-md border border-slate-200 bg-slate-50/70 p-3 text-xs dark:border-slate-700 dark:bg-slate-900/80">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Verification Result
+                    </p>
+                    <p className="font-mono text-[11px] text-slate-700 dark:text-slate-300">
+                      ID: {verifyResult.code}
+                    </p>
+                  </div>
+                  {statusLabel && (
+                    <Badge
+                      className={cn(
+                        "border-none text-[10px] font-semibold uppercase tracking-wide",
+                        statusLabel.tone === "verified" &&
+                          "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
+                        statusLabel.tone === "pending" &&
+                          "bg-amber-500/15 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+                        statusLabel.tone === "rejected" &&
+                          "bg-rose-500/15 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                      )}
+                    >
+                      {statusLabel.text}
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Awarded To
+                    </p>
+                    <p className="text-xs font-medium text-slate-900 dark:text-slate-50">
+                      {verifyResult.holderName}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Program / Domain
+                    </p>
+                    <p className="text-xs font-medium text-slate-900 dark:text-slate-50">
+                      {verifyResult.program}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Organization
+                    </p>
+                    <p className="text-[11px] text-slate-800 dark:text-slate-200">
+                      {verifyResult.organizationName || "—"}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Duration
+                    </p>
+                    <p className="text-[11px] text-slate-800 dark:text-slate-200">
+                      {verifyResult.durationText || "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between border-t border-dashed border-slate-200 pt-2 text-[11px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  <div>
+                    <p>Issued on</p>
+                    <p className="text-[11px] font-medium text-slate-800 dark:text-slate-200">
+                      {formatDate(verifyResult.issuedAt ?? null)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p>Last verified</p>
+                    <p className="text-[11px] font-medium text-slate-800 dark:text-slate-200">
+                      {formatDate(verifyResult.verifiedAt ?? null)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Primary CTAs */}
@@ -284,7 +467,7 @@ export default function LandingPage() {
                   <span className="font-semibold text-blue-600 dark:text-blue-300">
                     3. Validate & store:
                   </span>{" "}
-                  Certivo validates records and saves them in MongoDB.
+                  Certivo validates records and saves them in the database.
                 </li>
                 <li>
                   <span className="font-semibold text-blue-600 dark:text-blue-300">

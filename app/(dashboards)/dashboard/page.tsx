@@ -136,7 +136,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Link href="/verify">
+          <Link href="/dashboard/verify">
             <Button className="bg-blue-600 text-white hover:bg-blue-700">
               Verify Certificate
             </Button>
