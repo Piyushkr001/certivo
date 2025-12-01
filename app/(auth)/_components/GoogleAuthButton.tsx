@@ -4,7 +4,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { useGoogleLogin } from "@react-oauth/google";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/app/auth/AuthContext";
+import axios from "axios";
 
 type Role = "admin" | "user";
 
@@ -14,7 +14,6 @@ interface GoogleAuthButtonProps {
 }
 
 export function GoogleAuthButton({ role, mode }: GoogleAuthButtonProps) {
-  const { login } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
@@ -31,43 +30,45 @@ export function GoogleAuthButton({ role, mode }: GoogleAuthButtonProps) {
             ? "/api/auth/google-login"
             : "/api/auth/google-signup";
 
-        const res = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const res = await axios.post(
+          endpoint,
+          {
             accessToken: tokenResponse.access_token,
             role,
-          }),
-        });
-
-        if (!res.ok) {
-          // 🔍 better logging to see what's going wrong
-          const text = await res.text();
-          console.error("Google auth backend error:", res.status, text);
-
-          let message: string | undefined;
-          try {
-            const data = JSON.parse(text);
-            message = data.message;
-          } catch {
-            // Not JSON (e.g. HTML 404) -> leave message undefined
+          },
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
           }
+        );
 
-          setErrorMsg(message || "Google authentication failed");
-          throw new Error(message || "Google authentication failed");
+        const data = res.data;
+
+        // backend sets HttpOnly cookie; we just need to redirect
+        if (!res.status || res.status >= 400) {
+          throw new Error(data?.message || "Google authentication failed");
         }
 
-        const data = await res.json();
-        // backend should return { token: "..." }
-        login(data.token);
-
-        if (role === "admin") {
-          router.push("/admin");
+        // Force full reload so AuthProvider re-hydrates from /api/auth/me
+        const target = role === "admin" ? "/admin" : "/dashboard";
+        if (typeof window !== "undefined") {
+          window.location.href = target;
         } else {
-          router.push("/dashboard");
+          router.push(target);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("GoogleAuthButton error:", err);
+
+        if (axios.isAxiosError(err)) {
+          const msg =
+            (err.response?.data as any)?.message ||
+            err.message ||
+            "Google authentication failed";
+          setErrorMsg(msg);
+        } else {
+          setErrorMsg(err?.message || "Google authentication failed");
+        }
       } finally {
         setLoading(false);
       }

@@ -3,19 +3,19 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import axios from "axios";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/app/auth/AuthContext";
 import { GoogleAuthButton } from "../_components/GoogleAuthButton";
 
 type Role = "admin" | "user";
 
 export default function SignupPage() {
   const router = useRouter();
-  const { login } = useAuth();
 
   const [role, setRole] = React.useState<Role>("user");
   const [name, setName] = React.useState("");
@@ -30,27 +30,39 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, role }),
-      });
+      const res = await axios.post(
+        "/api/auth/signup",
+        { name, email, password, role },
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || "Signup failed");
+      const data = res.data;
+
+      if (!res.status || res.status >= 400) {
+        throw new Error(data?.message || "Signup failed");
       }
 
-      const data = await res.json(); // { token: string, ... }
-      login(data.token);
-
-      if (role === "admin") {
-        router.push("/admin");
+      // Backend sets cookie, so just redirect and let AuthProvider hydrate
+      const target = role === "admin" ? "/admin" : "/dashboard";
+      if (typeof window !== "undefined") {
+        window.location.href = target;
       } else {
-        router.push("/dashboard");
+        router.push(target);
       }
     } catch (err: any) {
-      setError(err.message || "Something went wrong");
+      if (axios.isAxiosError(err)) {
+        const msg =
+          (err.response?.data as any)?.message ||
+          err.message ||
+          "Signup failed";
+        setError(msg);
+      } else {
+        setError(err?.message || "Something went wrong");
+      }
     } finally {
       setLoading(false);
     }

@@ -1,15 +1,8 @@
+// app/auth/AuthContext.tsx
 "use client";
 
 import React from "react";
 
-type JwtPayload = {
-  sub?: string;
-  email?: string;
-  name?: string;
-  role?: string;
-  exp?: number;
-  [key: string]: unknown;
-};
 
 type User = {
   id?: string;
@@ -20,106 +13,113 @@ type User = {
 
 type AuthContextValue = {
   user: User | null;
-  token: string | null;
+  token: string | null; // still provided if backend returns it
   isLoading: boolean;
-  login: (jwt: string) => void;
-  logout: () => void;
+  loginWithCredentials: (email: string, password: string, role: string) => Promise<void>;
+  signupWithCredentials: (name: string, email: string, password: string, role: string) => Promise<void>;
+  logout: () => Promise<void>;
 };
 
-const AuthContext = React.createContext<AuthContextValue | undefined>(
-  undefined
-);
-
-const TOKEN_KEY = "certivo_token";
-
-// Simple JWT decoder using atob (client-side only)
-function decodeJwt(token: string): JwtPayload {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) {
-      throw new Error("Invalid JWT format");
-    }
-
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const decoded = atob(base64);
-    return JSON.parse(decoded);
-  } catch (err) {
-    console.error("Failed to decode JWT", err);
-    throw new Error("Invalid JWT");
-  }
-}
+const AuthContext = React.createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<User | null>(null);
   const [token, setToken] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
 
+  // Hydrate from /api/auth/me (server validates cookie)
   React.useEffect(() => {
-    try {
-      const stored =
-        typeof window !== "undefined"
-          ? window.localStorage.getItem(TOKEN_KEY)
-          : null;
-
-      if (stored) {
-        const decoded = decodeJwt(stored);
-
-        // Check expiry if present
-        if (decoded.exp && decoded.exp * 1000 < Date.now()) {
-          window.localStorage.removeItem(TOKEN_KEY);
+    let mounted = true;
+    async function hydrate() {
+      try {
+        setIsLoading(true);
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const data = await res.json();
+        if (!mounted) return;
+        if (data?.ok && data.user) {
+          setUser(data.user);
         } else {
-          setToken(stored);
-          setUser({
-            id: decoded.sub,
-            email: decoded.email,
-            name: decoded.name,
-            role: decoded.role,
-          });
+          setUser(null);
         }
+      } catch (err) {
+        console.error("Failed to hydrate auth:", err);
+        setUser(null);
+      } finally {
+        if (mounted) setIsLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to parse stored JWT", err);
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(TOKEN_KEY);
-      }
-    } finally {
-      setIsLoading(false);
     }
+    hydrate();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const login = (jwt: string) => {
-    try {
-      const decoded = decodeJwt(jwt);
+  // Login with email/password: server sets HttpOnly cookie and returns { token, user }
+  const loginWithCredentials = async (email: string, password: string, role: string) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, role }),
+    });
 
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(TOKEN_KEY, jwt);
-      }
-
-      setToken(jwt);
-      setUser({
-        id: decoded.sub,
-        email: decoded.email,
-        name: decoded.name,
-        role: decoded.role,
-      });
-    } catch (err) {
-      console.error("Invalid JWT passed to login()", err);
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || "Login failed");
     }
+
+    // Backend set cookie; hydrate user by calling /api/auth/me
+    const me = await fetch("/api/auth/me", { cache: "no-store" });
+    const meData = await me.json();
+    if (meData?.ok && meData.user) {
+      setUser(meData.user);
+    } else {
+      setUser(null);
+    }
+
+    // keep token (optional)
+    if (data.token) setToken(data.token);
   };
 
-  const logout = () => {
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(TOKEN_KEY);
+  const signupWithCredentials = async (name: string, email: string, password: string, role: string) => {
+    const res = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password, role }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || "Signup failed");
     }
-    setToken(null);
-    setUser(null);
+
+    const me = await fetch("/api/auth/me", { cache: "no-store" });
+    const meData = await me.json();
+    if (meData?.ok && meData.user) {
+      setUser(meData.user);
+    } else {
+      setUser(null);
+    }
+
+    if (data.token) setToken(data.token);
+  };
+
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (err) {
+      console.error("Logout request failed:", err);
+    } finally {
+      setUser(null);
+      setToken(null);
+    }
   };
 
   const value: AuthContextValue = {
     user,
     token,
     isLoading,
-    login,
+    loginWithCredentials,
+    signupWithCredentials,
     logout,
   };
 
