@@ -5,6 +5,7 @@ import {
   timestamp,
   pgEnum,
   integer,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -38,6 +39,8 @@ export const users = pgTable("users", {
   // for Google OAuth linking
   googleId: text("google_id"),
   picture: text("picture"),
+  
+  isActive: boolean("is_active").notNull().default(true),
 
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
