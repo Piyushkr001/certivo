@@ -1,6 +1,6 @@
 // app/api/auth/google-login/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { signAuthJwt } from "@/lib/auth-jwt";
 import { db } from "@/config/db";
 import { users } from "@/config/schema";
@@ -30,7 +30,10 @@ export async function POST(req: NextRequest) {
     const { accessToken, role } = await req.json();
 
     if (!accessToken || !role) {
-      return NextResponse.json({ message: "accessToken and role are required." }, { status: 400 });
+      return NextResponse.json(
+        { message: "accessToken and role are required." },
+        { status: 400 }
+      );
     }
 
     if (role !== "admin" && role !== "user") {
@@ -38,51 +41,87 @@ export async function POST(req: NextRequest) {
     }
 
     const profile = await getGoogleProfile(accessToken);
+
     if (!profile.email) {
-      return NextResponse.json({ message: "Google account does not have a public email." }, { status: 400 });
+      return NextResponse.json(
+        { message: "Google account does not have a public email." },
+        { status: 400 }
+      );
     }
 
-    // Find user by googleId or email+role
-    let user =
-      (await db.query.users.findFirst({
-        where: and(eq(users.googleId, profile.sub)),
-      })) ||
-      (await db.query.users.findFirst({
-        where: and(eq(users.email, profile.email)),
-      }));
+    const email = profile.email.toLowerCase();
 
-    // If user doesn't exist, create it (signup on login)
-    if (!user) {
+    // Look up any existing account for this Google profile / email
+    const existingByGoogle = await db.query.users.findFirst({
+      where: eq(users.googleId, profile.sub),
+    });
+
+    const existingByEmail = existingByGoogle
+      ? null
+      : await db.query.users.findFirst({
+          where: eq(users.email, email),
+        });
+
+    let user = existingByGoogle ?? existingByEmail ?? null;
+
+    if (user) {
+      // 🔐 ROLE SEPARATION: Google account is already linked to a specific role
+      if (user.role !== role) {
+        const msg =
+          user.role === "admin"
+            ? "This Google account is linked to an admin account. Please login as Admin."
+            : "This Google account is linked to a user account. Please login as User.";
+
+        return NextResponse.json({ message: msg }, { status: 403 });
+      }
+
+      // keep googleId / picture in sync
+      const needsUpdate =
+        user.googleId !== profile.sub || user.picture !== profile.picture;
+
+      if (needsUpdate) {
+        await db
+          .update(users)
+          .set({
+            googleId: profile.sub,
+            picture: profile.picture,
+          })
+          .where(eq(users.id, user.id));
+        const refreshed = await db.query.users.findFirst({
+          where: eq(users.id, user.id),
+        });
+        if (refreshed) user = refreshed;
+      }
+    } else {
+      // No account yet → create with the requested role
       const [created] = await db
         .insert(users)
         .values({
           name: profile.name,
-          email: profile.email,
-          role,
+          email,
+          role, // "admin" | "user" from request
           googleId: profile.sub,
           picture: profile.picture,
         })
         .returning();
 
       user = created;
-    } else {
-      // Ensure googleId and picture are updated
-      await db.update(users).set({ googleId: profile.sub, picture: profile.picture }).where(eq(users.id, user.id));
-      // fetch updated user
-      user = (await db.query.users.findFirst({ where: eq(users.id, user.id) })) ?? user;
     }
 
     const token = await signAuthJwt(user);
 
-    const res = NextResponse.json({
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
+    const res = NextResponse.json(
+      {
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
       },
-    }, { status: 200 });
+      { status: 200 }
+    );
 
     res.cookies.set({
       name: "certivo_token",
@@ -97,6 +136,9 @@ export async function POST(req: NextRequest) {
     return res;
   } catch (error) {
     console.error("Google login error:", error);
-    return NextResponse.json({ message: "Internal server error." }, { status: 500 });
+    return NextResponse.json(
+      { message: "Internal server error." },
+      { status: 500 }
+    );
   }
 }
