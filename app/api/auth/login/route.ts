@@ -6,14 +6,22 @@ import { signAuthJwt } from "@/lib/auth-jwt";
 import { db } from "@/config/db";
 import { users } from "@/config/schema";
 
+type LoginBody = {
+  email?: string;
+  password?: string;
+  role?: "admin" | "user" | string;
+};
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = (await req.json()) as LoginBody;
 
+    // Normalize inputs
     const email = (body.email ?? "").trim().toLowerCase();
-    const password = body.password as string | undefined;
+    const password = body.password;
     const role = body.role as "admin" | "user" | undefined;
 
+    // Basic field validation
     if (!email || !password || !role) {
       return NextResponse.json(
         { message: "Email, password and role are required." },
@@ -21,6 +29,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Allow only known roles
     if (role !== "admin" && role !== "user") {
       return NextResponse.json(
         { message: "Invalid role." },
@@ -29,13 +38,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 🔐 STRONG ROLE SEPARATION:
-    // We search by BOTH email AND role.
-    // So using the wrong role will not find a user at all.
+    // Find user strictly by (email + role) combination.
+    // This prevents logging in as admin using a user account (and vice versa).
     const user = await db.query.users.findFirst({
       where: and(eq(users.email, email), eq(users.role, role)),
     });
 
-    // If email+role combo doesn't exist → generic "invalid credentials"
+    // Generic error to avoid leaking which part was wrong
     if (!user) {
       return NextResponse.json(
         { message: "Invalid credentials." },
@@ -51,6 +60,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // If this account is Google-only, block password login
     if (!user.hashedPassword) {
       return NextResponse.json(
         {
@@ -61,6 +71,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Verify password hash
     const valid = await verifyPassword(password, user.hashedPassword);
 
     if (!valid) {
@@ -70,6 +81,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Create signed JWT containing user identity + role
     const token = await signAuthJwt(user);
 
     const res = NextResponse.json(
@@ -85,7 +97,10 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     );
 
-    // Set HttpOnly cookie (server-side)
+    // 🔐 HttpOnly auth cookie:
+    // - httpOnly: not accessible from JS (XSS protection)
+    // - sameSite=lax: mitigates CSRF for normal navigation
+    // - secure in production: only sent over HTTPS
     res.cookies.set({
       name: "certivo_token",
       value: token,

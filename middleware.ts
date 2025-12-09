@@ -6,28 +6,26 @@ import { verifyAuthJwt } from "./lib/auth-jwt";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Route classification
   const isAdminRoute = pathname.startsWith("/admin");
   const isUserRoute = pathname.startsWith("/dashboard");
 
-  // Only guard these routes
+  // Only protect /admin/* and /dashboard/* paths
   if (!isAdminRoute && !isUserRoute) {
     return NextResponse.next();
   }
 
-  // Get token from cookie or Bearer header
+  // Read token from HttpOnly cookie or Bearer header (same precedence as before)
   const cookieToken = req.cookies.get("certivo_token")?.value || null;
-  const headerToken = req.headers
-    .get("authorization")
-    ?.replace("Bearer ", "");
+  const headerToken = req.headers.get("authorization")?.replace("Bearer ", "");
   const token = cookieToken || headerToken || null;
 
-  // Not logged in → send to role-specific login page
+  // Not logged in → redirect to login with redirect + type hint
   if (!token) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", pathname);
 
-    // Optional: hint which login type to show
     if (isAdminRoute) url.searchParams.set("type", "admin");
     if (isUserRoute) url.searchParams.set("type", "user");
 
@@ -35,41 +33,42 @@ export async function middleware(req: NextRequest) {
   }
 
   try {
+    // Verify JWT and extract role
     const payload = await verifyAuthJwt(token);
     const role = (payload as any).role as "admin" | "user" | undefined;
 
     // 🔐 Only admins can access /admin/*
     if (isAdminRoute && role !== "admin") {
       const url = req.nextUrl.clone();
-      url.pathname = "/dashboard"; // send non-admins to user dashboard
+      url.pathname = "/dashboard"; // non-admins → user dashboard
       return NextResponse.redirect(url);
     }
 
     // 🔐 Only users can access /dashboard/*
-    // (Remove this block if you WANT admins to see user dashboard too)
+    // (If you ever want admins to access dashboard too, remove this block.)
     if (isUserRoute && role !== "user") {
       const url = req.nextUrl.clone();
-      url.pathname = "/admin"; // send non-users to admin dashboard
+      url.pathname = "/admin"; // non-users → admin dashboard
       return NextResponse.redirect(url);
     }
 
-    // Role matches route → allow
+    // Authenticated and role matches route → allow request
     return NextResponse.next();
   } catch (err) {
     console.error("middleware token verification failed:", err);
 
+    // Invalid/expired token → redirect to login and clear cookie
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", pathname);
 
     const res = NextResponse.redirect(url);
-    // Clear bad token
     res.cookies.set("certivo_token", "", { maxAge: 0, path: "/" });
     return res;
   }
 }
 
-// 👇 Keep matcher as-is
+// 👇 Keep matcher as-is (protects /dashboard/* and /admin/*)
 export const config = {
   matcher: ["/dashboard/:path*", "/admin/:path*"],
 };

@@ -86,7 +86,6 @@ export default function DashboardPage() {
         setError(null);
 
         const res = await axios.get("/api/dashboard/overview", {
-          // cookies (JWT) are sent automatically by the browser
           headers: {
             "Content-Type": "application/json",
           },
@@ -116,8 +115,7 @@ export default function DashboardPage() {
     };
   }, []);
 
-  const accountType =
-    user?.role || stats?.accountType || "user";
+  const accountType = user?.role || stats?.accountType || "user";
 
   const totalCertificates = stats?.totalCertificates ?? 0;
   const lastVerifiedLabel = formatDate(stats?.lastVerifiedAt);
@@ -178,7 +176,6 @@ export default function DashboardPage() {
         <h2 className="mb-3 text-lg font-semibold">Recent Certificates</h2>
 
         {loading ? (
-          // simple skeleton-ish loading state
           <div className="space-y-3">
             {Array.from({ length: 2 }).map((_, i) => (
               <div
@@ -219,11 +216,14 @@ export default function DashboardPage() {
                     {cert.status.charAt(0).toUpperCase() +
                       cert.status.slice(1)}
                   </Badge>
+
+                  {/* 🔽 changed: link directly to certificate template by code */}
                   <Button asChild size="sm" variant="outline">
                     <Link
-                      href={`/dashboard/certificates/${cert.id}`}
+                      href={`/certificate/${encodeURIComponent(cert.code)}`}
+                      target="_blank"
                     >
-                      View
+                      View Certificate
                     </Link>
                   </Button>
                 </div>

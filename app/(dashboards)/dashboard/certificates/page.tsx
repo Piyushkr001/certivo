@@ -147,13 +147,17 @@ export default function CertificatesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <Link href={`/dashboard/certificates/${c.id}`}>
-                          <Button size="sm" variant="ghost">
-                            View
-                          </Button>
-                        </Link>
+                        <Button asChild size="sm" variant="ghost">
+                          <Link
+                            href={`/certificate/${encodeURIComponent(c.code)}`}
+                            target="_blank"
+                          >
+                            View Certificate
+                          </Link>
+                        </Button>
                       </div>
                     </td>
+
                   </tr>
                 ))}
             </tbody>

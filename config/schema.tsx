@@ -42,6 +42,19 @@ export const users = pgTable("users", {
   
   isActive: boolean("is_active").notNull().default(true),
 
+  // ✅ NEW: notification preferences
+  notifyInternship: boolean("notify_internship")
+    .notNull()
+    .default(true),
+
+  notifySecurity: boolean("notify_security")
+    .notNull()
+    .default(true),
+
+  notifyAnnouncements: boolean("notify_announcements")
+    .notNull()
+    .default(false),
+
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

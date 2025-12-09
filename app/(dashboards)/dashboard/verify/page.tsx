@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import axios from "axios";
+import Link from "next/link";
 import {
   ShieldCheck,
   Search,
@@ -61,6 +62,7 @@ export default function DashboardVerifyPage() {
 
   async function handleVerify(e?: React.FormEvent) {
     if (e) e.preventDefault();
+
     const trimmed = code.trim();
 
     if (!trimmed) {
@@ -74,13 +76,14 @@ export default function DashboardVerifyPage() {
       setError(null);
       setResult(null);
 
-      // Axios call instead of fetch
+      const normalizedCode = trimmed.toUpperCase();
+
       const res = await axios.get<{
         found: boolean;
         certificate?: VerifyResult;
         message?: string;
       }>("/api/verify", {
-        params: { code: trimmed },
+        params: { code: normalizedCode },
       });
 
       const data = res.data;
@@ -201,7 +204,7 @@ export default function DashboardVerifyPage() {
                 </label>
                 <Select
                   value={issuer}
-                  onValueChange={(value: React.SetStateAction<string | undefined>) => setIssuer(value)}
+                  onValueChange={(value) => setIssuer(value)}
                 >
                   <SelectTrigger className="h-9 text-xs">
                     <SelectValue placeholder="Select organization (optional)" />
@@ -378,6 +381,20 @@ export default function DashboardVerifyPage() {
                       {formatDate(result.verifiedAt)}
                     </p>
                   </div>
+                </div>
+
+                {/* View & Download button */}
+                <div className="flex justify-end pt-1">
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/certificate/${encodeURIComponent(
+                        result.code
+                      )}`}
+                      target="_blank"
+                    >
+                      View &amp; Download Certificate
+                    </Link>
+                  </Button>
                 </div>
 
                 <div className="flex flex-col gap-2 border-t border-dashed border-slate-200 pt-3 text-[11px] text-slate-500 dark:border-slate-700 dark:text-slate-400">

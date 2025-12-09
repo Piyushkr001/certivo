@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { ExcelImportForm } from "./_components/ExcelImportForm";
 
 type AdminCertificate = {
   id: number;
@@ -236,6 +237,8 @@ export default function AdminCertificatesPage() {
           </form>
         </CardContent>
       </Card>
+
+      <ExcelImportForm/>
 
       {/* Recently issued certificates list */}
       <Card className="overflow-x-auto">
