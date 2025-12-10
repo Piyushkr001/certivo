@@ -6,6 +6,7 @@ import {
   pgEnum,
   integer,
   boolean,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -172,6 +173,100 @@ export const certificateActivitiesRelations = relations(
       references: [users.id],
     }),
   })
+);
+
+
+export const organizations = pgTable("organizations", {
+  id: serial("id").primaryKey(),
+
+  name: text("name").notNull(),
+
+  // college | company | tpo | other | ...
+  type: text("type").notNull().default("college"),
+
+  contactEmail: text("contact_email"),
+  contactPerson: text("contact_person"),
+
+  isActive: boolean("is_active").notNull().default(true),
+
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    mode: "date",
+  })
+    .defaultNow()
+    .notNull(),
+
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    mode: "date",
+  })
+    .defaultNow()
+    .notNull(),
+});
+
+export const adminSettings = pgTable("admin_settings", {
+  id: serial("id").primaryKey(),
+
+  // Verification defaults
+  autoVerifyImports: boolean("auto_verify_imports")
+    .notNull()
+    .default(true),
+  requireReviewForManual: boolean("require_review_for_manual")
+    .notNull()
+    .default(false),
+  lockStatusAfterDownload: boolean("lock_status_after_download")
+    .notNull()
+    .default(false),
+
+  // Public portal settings
+  publicLookupEnabled: boolean("public_lookup_enabled")
+    .notNull()
+    .default(true),
+  showOrgNameOnPublic: boolean("show_org_name_on_public")
+    .notNull()
+    .default(true),
+  allowPublicPdfDownload: boolean("allow_public_pdf_download")
+    .notNull()
+    .default(true),
+
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const userNotificationSettings = pgTable(
+  "user_notification_settings",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    notifyInternship: boolean("notify_internship")
+      .notNull()
+      .default(true),
+    notifySecurity: boolean("notify_security")
+      .notNull()
+      .default(true),
+    notifyAnnouncements: boolean("notify_announcements")
+      .notNull()
+      .default(false),
+
+    createdAt: timestamp("created_at", { mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    userUnique: uniqueIndex("user_notification_settings_user_unique").on(
+      t.userId,
+    ),
+  }),
 );
 
 /**

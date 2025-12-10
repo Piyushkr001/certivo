@@ -10,6 +10,7 @@ import {
 } from "@/config/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyAuthJwt } from "@/lib/auth-jwt";
+import { getVerificationSettings } from "@/lib/admin-settings";
 
 export const runtime = "nodejs"; // needed for xlsx in Next
 
@@ -20,8 +21,6 @@ type ImportRow = {
   OrganizationName?: string;
   DurationText?: string;
 };
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function generateCertificateCode() {
   const year = new Date().getFullYear();
@@ -47,6 +46,8 @@ async function requireAdmin() {
 export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdmin();
+    const verificationSettings = await getVerificationSettings();
+    const shouldAutoVerify = verificationSettings.autoVerifyImports;
 
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
@@ -89,18 +90,9 @@ export async function POST(req: NextRequest) {
       const organizationName = row.OrganizationName?.trim() || null;
       const durationText = row.DurationText?.trim() || null;
 
-      // ✅ required fields
       if (!name || !email || !program) {
         errors.push(
           `Row ${rowNumber}: Name, Email and Program are required.`
-        );
-        continue;
-      }
-
-      // ✅ basic email format check (extra data-integrity guard)
-      if (!EMAIL_REGEX.test(email)) {
-        errors.push(
-          `Row ${rowNumber}: Invalid email format (${email}).`
         );
         continue;
       }
@@ -127,7 +119,7 @@ export async function POST(req: NextRequest) {
         existingUsers++;
       }
 
-      // 2. Create certificate
+      // 2. Create certificate with status based on admin settings
       let code = generateCertificateCode();
       let created = false;
       let retries = 0;
@@ -144,7 +136,7 @@ export async function POST(req: NextRequest) {
               program,
               organizationName,
               durationText,
-              status: "verified", // or "pending"
+              status: shouldAutoVerify ? "verified" : "pending",
             })
             .returning();
 

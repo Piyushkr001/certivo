@@ -76,6 +76,7 @@ export default function DashboardVerifyPage() {
       setError(null);
       setResult(null);
 
+      // Normalize to uppercase so CERT-INT-... codes are consistent
       const normalizedCode = trimmed.toUpperCase();
 
       const res = await axios.get<{
@@ -96,14 +97,39 @@ export default function DashboardVerifyPage() {
         return;
       }
 
+      // Optionally also reflect normalized code in the input
+      setCode(normalizedCode);
       setResult(data.certificate);
     } catch (err: any) {
-      console.error("verify error:", err);
-      const msg =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Something went wrong while verifying. Please try again in a moment.";
-      setError(msg);
+      // Axios will treat 4xx/5xx as errors, including "not found"
+      if (axios.isAxiosError(err) && err.response) {
+        const status = err.response.status;
+        const serverMessage =
+          (err.response.data as any)?.message ??
+          (typeof err.response.data === "string"
+            ? err.response.data
+            : null);
+
+        if (status === 404) {
+          // Clean "not found" handling
+          setError(
+            serverMessage ||
+              "No certificate found for this ID. Please check the ID and try again."
+          );
+        } else {
+          // Log only non-404 errors for debugging
+          console.error("verify error:", err);
+          setError(
+            serverMessage ||
+              "Something went wrong while verifying. Please try again in a moment."
+          );
+        }
+      } else {
+        console.error("verify error (unexpected):", err);
+        setError(
+          "Something went wrong while verifying. Please try again in a moment."
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -169,7 +195,7 @@ export default function DashboardVerifyPage() {
         {/* Left: Form / filters */}
         <Card className="flex-1">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
               <Search className="h-4 w-4 text-blue-500" />
               Search Certificate
             </CardTitle>
@@ -383,13 +409,11 @@ export default function DashboardVerifyPage() {
                   </div>
                 </div>
 
-                {/* View & Download button */}
+                {/* View & Download button (internal dashboard) */}
                 <div className="flex justify-end pt-1">
                   <Button asChild size="sm" variant="outline">
                     <Link
-                      href={`/certificate/${encodeURIComponent(
-                        result.code
-                      )}`}
+                      href={`/certificate/${encodeURIComponent(result.code)}`}
                       target="_blank"
                     >
                       View &amp; Download Certificate

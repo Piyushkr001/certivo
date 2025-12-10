@@ -67,6 +67,7 @@ export default function SettingsPage() {
     async function loadNotificationPrefs() {
       try {
         setNotifLoading(true);
+
         const res = await axios.get<{
           notifyInternship: boolean;
           notifySecurity: boolean;
@@ -76,19 +77,21 @@ export default function SettingsPage() {
         if (cancelled) return;
 
         setNotifyInternship(
-          res.data.notifyInternship ?? true
+          res.data?.notifyInternship ?? true,
         );
         setNotifySecurity(
-          res.data.notifySecurity ?? true
+          res.data?.notifySecurity ?? true,
         );
         setNotifyAnnouncements(
-          res.data.notifyAnnouncements ?? false
+          res.data?.notifyAnnouncements ?? false,
         );
       } catch (err) {
-        // If loading fails, just keep defaults and log error
+        // If loading fails, keep defaults and just log error
         console.error("Load notification prefs error:", err);
       } finally {
-        if (!cancelled) setNotifLoading(false);
+        if (!cancelled) {
+          setNotifLoading(false);
+        }
       }
     }
 
@@ -100,7 +103,7 @@ export default function SettingsPage() {
   }, [user]);
 
   // 👉 Change password → /api/user/change-password
-  async function handlePasswordSubmit(e: React.FormEvent) {
+  async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPasswordMessage(null);
     setPasswordError(null);
@@ -109,6 +112,7 @@ export default function SettingsPage() {
       setPasswordError("Please fill out all password fields.");
       return;
     }
+
     if (newPassword !== confirmPassword) {
       setPasswordError("New password and confirmation do not match.");
       return;
@@ -123,7 +127,7 @@ export default function SettingsPage() {
       });
 
       setPasswordMessage(
-        res.data?.message || "Password updated successfully."
+        res.data?.message || "Password updated successfully.",
       );
       setCurrentPassword("");
       setNewPassword("");
@@ -158,11 +162,11 @@ export default function SettingsPage() {
         },
         {
           headers: { "Content-Type": "application/json" },
-        }
+        },
       );
 
       setNotifMessage(
-        res.data?.message || "Notification preferences saved."
+        res.data?.message || "Notification preferences saved.",
       );
     } catch (err: any) {
       console.error("Save notifications error:", err);
@@ -181,7 +185,6 @@ export default function SettingsPage() {
     setLoadingAction(true);
     try {
       await axios.post("/api/auth/logout-all");
-      // After clearing cookie, send user to login
       router.push("/login");
     } catch (err: any) {
       console.error("Logout all sessions error:", err);
@@ -198,7 +201,7 @@ export default function SettingsPage() {
   // 👉 Deactivate account → /api/user/deactivate
   const handleDeactivateAccount = async () => {
     const confirmed = window.confirm(
-      "Are you sure you want to deactivate your account? You will not be able to log in until an administrator reactivates it."
+      "Are you sure you want to deactivate your account? You will not be able to log in until an administrator reactivates it.",
     );
     if (!confirmed) return;
 
@@ -206,7 +209,7 @@ export default function SettingsPage() {
       const res = await axios.post("/api/user/deactivate");
       alert(
         res.data?.message ||
-          "Your account has been deactivated. You will be redirected."
+          "Your account has been deactivated. You will be redirected.",
       );
       router.replace("/");
     } catch (err: any) {
@@ -272,7 +275,7 @@ export default function SettingsPage() {
                     id="currentPassword"
                     type="password"
                     value={currentPassword}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setCurrentPassword(e.target.value)
                     }
                     autoComplete="current-password"
@@ -287,7 +290,9 @@ export default function SettingsPage() {
                       id="newPassword"
                       type="password"
                       value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        setNewPassword(e.target.value)
+                      }
                       autoComplete="new-password"
                       disabled={passwordSaving}
                     />
@@ -300,7 +305,7 @@ export default function SettingsPage() {
                       id="confirmPassword"
                       type="password"
                       value={confirmPassword}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setConfirmPassword(e.target.value)
                       }
                       autoComplete="new-password"
@@ -442,7 +447,11 @@ export default function SettingsPage() {
                   onClick={handleSaveNotifications}
                   disabled={notifSaving || notifLoading}
                 >
-                  {notifSaving ? "Saving..." : "Save preferences"}
+                  {notifSaving
+                    ? "Saving..."
+                    : notifLoading
+                    ? "Loading..."
+                    : "Save preferences"}
                 </Button>
               </div>
 
@@ -462,7 +471,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Right column: account & danger zone */}
-        <div className="w-full lg:w-80 flex flex-col gap-4">
+        <div className="flex w-full flex-col gap-4 lg:w-80">
           {/* Account summary */}
           <Card>
             <CardHeader className="pb-3">

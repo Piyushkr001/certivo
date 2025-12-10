@@ -7,6 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ExcelImportForm } from "./_components/ExcelImportForm";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
 type AdminCertificate = {
   id: number;
@@ -15,9 +22,17 @@ type AdminCertificate = {
   program: string;
   issuedAt: string | null;
   status: string;
+  organizationName?: string | null;
 };
 
 type IssuedCertificate = AdminCertificate;
+
+type AdminOrganizationOption = {
+  id: number;
+  name: string;
+  type?: string | null;
+  isActive?: boolean | null;
+};
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -34,6 +49,7 @@ export default function AdminCertificatesPage() {
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
   const [issuedAt, setIssuedAt] = useState("");
+
   const [loadingIssue, setLoadingIssue] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +59,13 @@ export default function AdminCertificatesPage() {
   const [loadingList, setLoadingList] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
 
-  // Load all certificates for admin view
+  const [organizations, setOrganizations] = useState<
+    AdminOrganizationOption[]
+  >([]);
+  const [orgLoading, setOrgLoading] = useState(false);
+  const [orgError, setOrgError] = useState<string | null>(null);
+  const [selectedOrgId, setSelectedOrgId] = useState<string>("");
+
   const loadCertificates = useCallback(async () => {
     try {
       setLoadingList(true);
@@ -72,15 +94,67 @@ export default function AdminCertificatesPage() {
     }
   }, []);
 
+  const loadOrganizations = useCallback(async () => {
+    try {
+      setOrgLoading(true);
+      setOrgError(null);
+
+      const res = await fetch("/api/admin/organizations", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Unable to load organizations.");
+      }
+
+      let orgList = data as AdminOrganizationOption[];
+
+      orgList = orgList.filter(
+        (org) =>
+          org.isActive === undefined || org.isActive === null || org.isActive
+      );
+
+      setOrganizations(orgList);
+
+      if (!selectedOrgId && orgList.length > 0) {
+        setSelectedOrgId(String(orgList[0].id));
+      }
+    } catch (err: any) {
+      console.error("Load organizations error:", err);
+      setOrgError(err.message || "Failed to load organizations.");
+      setOrganizations([]);
+      setSelectedOrgId("");
+    } finally {
+      setOrgLoading(false);
+    }
+  }, [selectedOrgId]);
+
   useEffect(() => {
     void loadCertificates();
-  }, [loadCertificates]);
+    void loadOrganizations();
+  }, [loadCertificates, loadOrganizations]);
 
   const handleIssue = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
     setError(null);
     setIssuedCert(null);
+
+    if (!selectedOrgId) {
+      setError("Please select an organization.");
+      return;
+    }
+
+    const organizationId = Number(selectedOrgId);
+    if (!organizationId || Number.isNaN(organizationId)) {
+      setError("Invalid organization selected.");
+      return;
+    }
 
     try {
       setLoadingIssue(true);
@@ -90,7 +164,7 @@ export default function AdminCertificatesPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ name, domain, issuedAt }),
+        body: JSON.stringify({ name, domain, issuedAt, organizationId }),
       });
 
       const data = await res.json();
@@ -102,12 +176,11 @@ export default function AdminCertificatesPage() {
       setMessage(data.message || "Certificate issued successfully.");
       setIssuedCert(data.certificate as IssuedCertificate);
 
-      // Clear form
       setName("");
       setDomain("");
       setIssuedAt("");
+      // keep selectedOrgId for faster repeated issuing
 
-      // Refresh list
       void loadCertificates();
     } catch (err: any) {
       console.error(err);
@@ -130,7 +203,6 @@ export default function AdminCertificatesPage() {
     <div className="space-y-6">
       <h1 className="text-lg font-semibold">Issue Certificate</h1>
 
-      {/* Issue certificate form */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">New Certificate</CardTitle>
@@ -146,6 +218,53 @@ export default function AdminCertificatesPage() {
                 onChange={(e) => setName(e.target.value)}
                 required
               />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Organization
+              </label>
+
+              {orgLoading ? (
+                <p className="text-xs text-slate-500">
+                  Loading organizations...
+                </p>
+              ) : orgError ? (
+                <p className="text-xs text-red-600 dark:text-red-400">
+                  {orgError} — go to the Organizations page and ensure it’s
+                  configured.
+                </p>
+              ) : organizations.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  No organizations found. Add organizations in the Admin &gt;
+                  Organizations section first.
+                </p>
+              ) : (
+                <Select
+                  value={selectedOrgId}
+                  onValueChange={(value) => setSelectedOrgId(value)}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Select organization" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {organizations.map((org) => (
+                      <SelectItem
+                        key={org.id}
+                        value={String(org.id)}
+                        className="text-sm"
+                      >
+                        {org.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                This links the certificate to the organization for verification
+                and reporting.
+              </p>
             </div>
 
             <div>
@@ -173,7 +292,9 @@ export default function AdminCertificatesPage() {
               <Button
                 type="submit"
                 className="bg-blue-600 text-white"
-                disabled={loadingIssue}
+                disabled={
+                  loadingIssue || orgLoading || organizations.length === 0
+                }
               >
                 {loadingIssue ? "Issuing..." : "Issue Certificate"}
               </Button>
@@ -238,9 +359,8 @@ export default function AdminCertificatesPage() {
         </CardContent>
       </Card>
 
-      <ExcelImportForm/>
+      <ExcelImportForm />
 
-      {/* Recently issued certificates list */}
       <Card className="overflow-x-auto">
         <CardHeader className="px-4 py-3">
           <CardTitle className="text-sm font-semibold">
@@ -254,6 +374,7 @@ export default function AdminCertificatesPage() {
                 <th className="px-4 py-3">Certificate ID</th>
                 <th className="px-4 py-3">Recipient</th>
                 <th className="px-4 py-3">Domain</th>
+                <th className="px-4 py-3">Organization</th>
                 <th className="px-4 py-3">Issued</th>
                 <th className="px-4 py-3">Status</th>
               </tr>
@@ -262,7 +383,7 @@ export default function AdminCertificatesPage() {
               {loadingList && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-4 py-6 text-center text-sm"
                   >
                     Loading certificates...
@@ -273,7 +394,7 @@ export default function AdminCertificatesPage() {
               {!loadingList && listError && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-4 py-6 text-center text-sm text-red-600 dark:text-red-400"
                   >
                     {listError}
@@ -284,7 +405,7 @@ export default function AdminCertificatesPage() {
               {!loadingList && !listError && certs?.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-4 py-6 text-center text-sm"
                   >
                     No certificates issued yet.
@@ -304,6 +425,9 @@ export default function AdminCertificatesPage() {
                     </td>
                     <td className="px-4 py-3">{c.holderName}</td>
                     <td className="px-4 py-3">{c.program}</td>
+                    <td className="px-4 py-3">
+                      {c.organizationName || "—"}
+                    </td>
                     <td className="px-4 py-3">
                       {formatDate(c.issuedAt)}
                     </td>

@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/config/db";
 import { certificates, certificateActivities } from "@/config/schema";
+import { getPublicPortalSettings } from "@/lib/admin-settings";
 
 /**
  * Public verification endpoint
@@ -20,6 +21,9 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Load portal settings (showOrgNameOnPublic, allowPublicPdfDownload, etc.)
+    const portalSettings = await getPublicPortalSettings();
 
     // Look up certificate by public code
     const rows = await db
@@ -52,6 +56,14 @@ export async function GET(req: NextRequest) {
     const cert = rows[0];
     const now = new Date();
 
+    // Respect "showOrgNameOnPublic" by masking organization name when disabled
+    const safeCertificate = {
+      ...cert,
+      organizationName: portalSettings.showOrgNameOnPublic
+        ? cert.organizationName
+        : null,
+    };
+
     // Update last verification time + log activity.
     // NOTE: we do NOT change `status` here; admins still manage pending/verified/rejected.
     await Promise.all([
@@ -75,9 +87,10 @@ export async function GET(req: NextRequest) {
       {
         found: true,
         certificate: {
-          ...cert,
+          ...safeCertificate,
           verifiedAt: now, // return the updated timestamp
         },
+        publicPortal: portalSettings,
       },
       { status: 200 }
     );
@@ -85,7 +98,8 @@ export async function GET(req: NextRequest) {
     console.error("verify api error:", error);
     return NextResponse.json(
       {
-        message: "Something went wrong while verifying this certificate.",
+        message:
+          "Something went wrong while verifying this certificate.",
       },
       { status: 500 }
     );
