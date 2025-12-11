@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/app/auth/AuthContext";
+import { Headset } from "@phosphor-icons/react";
 
 type Role = "admin" | "user";
 
@@ -51,6 +52,7 @@ const adminNav: NavItem[] = [
   { label: "Issue Certificates", href: "/admin/certificates", icon: BadgeCheck },
   { label: "Interns", href: "/admin/interns", icon: Users },
   { label: "Organizations", href: "/admin/organizations", icon: ShieldCheck },
+  { label: "Support Requests", href: "/admin/support", icon: Headset },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ];
 

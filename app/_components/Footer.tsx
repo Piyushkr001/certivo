@@ -5,8 +5,7 @@ import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Facebook, Github, Instagram, Linkedin, Mail } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Facebook, Instagram, Linkedin, Mail } from "lucide-react";
 import { XLogoIcon } from "@phosphor-icons/react";
 
 export default function Footer() {
@@ -86,7 +85,7 @@ export default function Footer() {
               <ul className="mt-3 space-y-2 text-sm">
                 <li>
                   <Link
-                    href="/verify"
+                    href="/dashboard/verify"
                     className="text-slate-700 hover:text-blue-600 dark:text-slate-300 dark:hover:text-blue-300"
                   >
                     Verify Certificate
@@ -140,7 +139,7 @@ export default function Footer() {
                     size="sm"
                     className="mt-1 flex items-center gap-2 px-0 text-slate-700 hover:text-blue-600 dark:text-slate-300 dark:hover:text-blue-300"
                   >
-                    <Link href="/contact">
+                    <Link href="/support">
                       <Mail className="h-4 w-4" />
                       <span>Support</span>
                     </Link>

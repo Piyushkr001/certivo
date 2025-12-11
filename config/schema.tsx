@@ -7,6 +7,7 @@ import {
   integer,
   boolean,
   uniqueIndex,
+  varchar,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -268,6 +269,32 @@ export const userNotificationSettings = pgTable(
     ),
   }),
 );
+
+export const supportTickets = pgTable("support_tickets", {
+  id: serial("id").primaryKey(),
+
+  subject: text("subject").notNull(),
+  description: text("description").notNull(),
+
+  category: varchar("category", { length: 50 })
+    .notNull()
+    .default("general"),
+
+  userEmail: varchar("user_email", { length: 255 }),
+  userName: varchar("user_name", { length: 255 }),
+  userRole: varchar("user_role", { length: 50 }),
+
+  status: varchar("status", { length: 50 })
+    .notNull()
+    .default("open"), // open | in_progress | resolved (later)
+
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 /**
  * TYPES
