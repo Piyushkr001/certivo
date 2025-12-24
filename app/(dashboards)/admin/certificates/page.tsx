@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import { useState, useCallback, useEffect } from "react";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ type AdminCertificate = {
   issuedAt: string | null;
   status: string;
   organizationName?: string | null;
+  durationText?: string | null; // ✅
 };
 
 type IssuedCertificate = AdminCertificate;
@@ -33,6 +35,21 @@ type AdminOrganizationOption = {
   type?: string | null;
   isActive?: boolean | null;
 };
+
+type CertificatesListResponse =
+  | {
+      message?: string;
+      certificates?: AdminCertificate[];
+      pagination?: { limit?: number; offset?: number; count?: number };
+    }
+  | AdminCertificate[];
+
+type OrganizationsListResponse =
+  | {
+      message?: string;
+      organizations?: AdminOrganizationOption[];
+    }
+  | AdminOrganizationOption[];
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -45,10 +62,24 @@ function formatDate(value: string | null) {
   });
 }
 
+// Safe JSON parsing so the UI never crashes on 401/403/405/500 HTML/plain responses
+async function safeReadJson<T = any>(res: Response): Promise<T | null> {
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) return null;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 export default function AdminCertificatesPage() {
   const [name, setName] = useState("");
+  const [email, setEmail] = useState(""); // ✅ NEW (important)
   const [domain, setDomain] = useState("");
   const [issuedAt, setIssuedAt] = useState("");
+
+  const [durationText, setDurationText] = useState("");
 
   const [loadingIssue, setLoadingIssue] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -59,9 +90,9 @@ export default function AdminCertificatesPage() {
   const [loadingList, setLoadingList] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
 
-  const [organizations, setOrganizations] = useState<
-    AdminOrganizationOption[]
-  >([]);
+  const [organizations, setOrganizations] = useState<AdminOrganizationOption[]>(
+    []
+  );
   const [orgLoading, setOrgLoading] = useState(false);
   const [orgError, setOrgError] = useState<string | null>(null);
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
@@ -73,21 +104,23 @@ export default function AdminCertificatesPage() {
 
       const res = await fetch("/api/admin/certificates", {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
-      const data = await res.json();
+      const data = await safeReadJson<CertificatesListResponse>(res);
 
       if (!res.ok) {
-        throw new Error(data?.message || "Unable to load certificates.");
+        const msg =
+          (data as any)?.message ||
+          `Unable to load certificates (HTTP ${res.status}).`;
+        throw new Error(msg);
       }
 
-      setCerts(data as AdminCertificate[]);
+      const list = Array.isArray(data) ? data : data?.certificates ?? [];
+      setCerts(list);
     } catch (err: any) {
       console.error(err);
-      setListError(err.message || "Failed to load certificates.");
+      setListError(err?.message || "Failed to load certificates.");
       setCerts([]);
     } finally {
       setLoadingList(false);
@@ -101,21 +134,24 @@ export default function AdminCertificatesPage() {
 
       const res = await fetch("/api/admin/organizations", {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
-      const data = await res.json();
+      const data = await safeReadJson<OrganizationsListResponse>(res);
 
       if (!res.ok) {
-        throw new Error(data?.message || "Unable to load organizations.");
+        const msg =
+          (data as any)?.message ||
+          `Unable to load organizations (HTTP ${res.status}).`;
+        throw new Error(msg);
       }
 
-      let orgList = data as AdminOrganizationOption[];
+      let orgList = Array.isArray(data)
+        ? data
+        : (data as any)?.organizations ?? [];
 
       orgList = orgList.filter(
-        (org) =>
+        (org: { isActive: boolean | null | undefined }) =>
           org.isActive === undefined || org.isActive === null || org.isActive
       );
 
@@ -126,7 +162,7 @@ export default function AdminCertificatesPage() {
       }
     } catch (err: any) {
       console.error("Load organizations error:", err);
-      setOrgError(err.message || "Failed to load organizations.");
+      setOrgError(err?.message || "Failed to load organizations.");
       setOrganizations([]);
       setSelectedOrgId("");
     } finally {
@@ -156,35 +192,51 @@ export default function AdminCertificatesPage() {
       return;
     }
 
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setError("Recipient email is required (so it appears in My Certificates).");
+      return;
+    }
+
     try {
       setLoadingIssue(true);
 
       const res = await fetch("/api/admin/certificates", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name, domain, issuedAt, organizationId }),
+        headers: { "Content-Type": "application/json" },
+
+        // ✅ FIX: send email so API links cert to the correct user (no placeholder user)
+        body: JSON.stringify({
+          name,
+          email: trimmedEmail,
+          domain,
+          issuedAt,
+          organizationId,
+          durationText: durationText?.trim() ? durationText.trim() : undefined,
+        }),
       });
 
-      const data = await res.json();
+      const data = await safeReadJson<any>(res);
 
       if (!res.ok) {
-        throw new Error(data?.message || "Failed to issue certificate.");
+        const msg =
+          data?.message || `Failed to issue certificate (HTTP ${res.status}).`;
+        throw new Error(msg);
       }
 
-      setMessage(data.message || "Certificate issued successfully.");
-      setIssuedCert(data.certificate as IssuedCertificate);
+      setMessage(data?.message || "Certificate issued successfully.");
+      setIssuedCert((data?.certificate ?? null) as IssuedCertificate);
 
       setName("");
+      setEmail(""); // ✅ reset
       setDomain("");
       setIssuedAt("");
-      // keep selectedOrgId for faster repeated issuing
+      setDurationText("");
 
       void loadCertificates();
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Failed to issue certificate.");
+      setError(err?.message || "Failed to issue certificate.");
     } finally {
       setLoadingIssue(false);
     }
@@ -192,8 +244,10 @@ export default function AdminCertificatesPage() {
 
   const handleReset = () => {
     setName("");
+    setEmail("");
     setDomain("");
     setIssuedAt("");
+    setDurationText("");
     setMessage(null);
     setError(null);
     setIssuedCert(null);
@@ -207,6 +261,7 @@ export default function AdminCertificatesPage() {
         <CardHeader>
           <CardTitle className="text-sm">New Certificate</CardTitle>
         </CardHeader>
+
         <CardContent>
           <form className="grid gap-3" onSubmit={handleIssue}>
             <div>
@@ -220,24 +275,37 @@ export default function AdminCertificatesPage() {
               />
             </div>
 
+            {/* ✅ NEW: Recipient Email (required) */}
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Recipient email
+              </label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="e.g. user@gmail.com"
+              />
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                Important: This is used to link the certificate to the user’s “My Certificates”.
+              </p>
+            </div>
+
             <div>
               <label className="mb-1 block text-sm font-medium">
                 Organization
               </label>
 
               {orgLoading ? (
-                <p className="text-xs text-slate-500">
-                  Loading organizations...
-                </p>
+                <p className="text-xs text-slate-500">Loading organizations...</p>
               ) : orgError ? (
                 <p className="text-xs text-red-600 dark:text-red-400">
-                  {orgError} — go to the Organizations page and ensure it’s
-                  configured.
+                  {orgError} — go to the Organizations page and ensure it’s configured.
                 </p>
               ) : organizations.length === 0 ? (
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  No organizations found. Add organizations in the Admin &gt;
-                  Organizations section first.
+                  No organizations found. Add organizations in the Admin &gt; Organizations section first.
                 </p>
               ) : (
                 <Select
@@ -262,8 +330,7 @@ export default function AdminCertificatesPage() {
               )}
 
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                This links the certificate to the organization for verification
-                and reporting.
+                This links the certificate to the organization for verification and reporting.
               </p>
             </div>
 
@@ -278,8 +345,20 @@ export default function AdminCertificatesPage() {
 
             <div>
               <label className="mb-1 block text-sm font-medium">
-                Issued date
+                Duration (optional)
               </label>
+              <Input
+                value={durationText}
+                onChange={(e) => setDurationText(e.target.value)}
+                placeholder='e.g. "June–Aug 2025"'
+              />
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                Stored in the certificate as durationText.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium">Issued date</label>
               <Input
                 type="date"
                 value={issuedAt}
@@ -292,9 +371,7 @@ export default function AdminCertificatesPage() {
               <Button
                 type="submit"
                 className="bg-blue-600 text-white"
-                disabled={
-                  loadingIssue || orgLoading || organizations.length === 0
-                }
+                disabled={loadingIssue || orgLoading || organizations.length === 0}
               >
                 {loadingIssue ? "Issuing..." : "Issue Certificate"}
               </Button>
@@ -309,9 +386,7 @@ export default function AdminCertificatesPage() {
               </p>
             )}
             {error && (
-              <p className="text-sm text-red-600 dark:text-red-400">
-                {error}
-              </p>
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
             )}
 
             {issuedCert && (
@@ -346,6 +421,14 @@ export default function AdminCertificatesPage() {
                   </div>
                   <div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Duration
+                    </p>
+                    <p className="text-[11px] font-medium text-slate-900 dark:text-slate-100">
+                      {issuedCert.durationText || "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
                       Status
                     </p>
                     <p className="text-[11px] font-medium capitalize text-slate-900 dark:text-slate-100">
@@ -367,6 +450,7 @@ export default function AdminCertificatesPage() {
             Recently Issued Certificates
           </CardTitle>
         </CardHeader>
+
         <CardContent className="p-0">
           <table className="min-w-full">
             <thead className="bg-slate-100 text-left text-xs uppercase text-slate-600 dark:bg-slate-900/70 dark:text-slate-400">
@@ -375,17 +459,16 @@ export default function AdminCertificatesPage() {
                 <th className="px-4 py-3">Recipient</th>
                 <th className="px-4 py-3">Domain</th>
                 <th className="px-4 py-3">Organization</th>
+                <th className="px-4 py-3">Duration</th>
                 <th className="px-4 py-3">Issued</th>
                 <th className="px-4 py-3">Status</th>
               </tr>
             </thead>
+
             <tbody className="divide-y">
               {loadingList && (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-6 text-center text-sm"
-                  >
+                  <td colSpan={7} className="px-4 py-6 text-center text-sm">
                     Loading certificates...
                   </td>
                 </tr>
@@ -394,7 +477,7 @@ export default function AdminCertificatesPage() {
               {!loadingList && listError && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-6 text-center text-sm text-red-600 dark:text-red-400"
                   >
                     {listError}
@@ -404,10 +487,7 @@ export default function AdminCertificatesPage() {
 
               {!loadingList && !listError && certs?.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-6 text-center text-sm"
-                  >
+                  <td colSpan={7} className="px-4 py-6 text-center text-sm">
                     No certificates issued yet.
                   </td>
                 </tr>
@@ -420,20 +500,13 @@ export default function AdminCertificatesPage() {
                     key={c.id}
                     className="bg-white text-sm dark:bg-slate-900/80"
                   >
-                    <td className="px-4 py-3 font-mono text-xs">
-                      {c.code}
-                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">{c.code}</td>
                     <td className="px-4 py-3">{c.holderName}</td>
                     <td className="px-4 py-3">{c.program}</td>
-                    <td className="px-4 py-3">
-                      {c.organizationName || "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {formatDate(c.issuedAt)}
-                    </td>
-                    <td className="px-4 py-3 capitalize">
-                      {c.status || "—"}
-                    </td>
+                    <td className="px-4 py-3">{c.organizationName || "—"}</td>
+                    <td className="px-4 py-3">{c.durationText || "—"}</td>
+                    <td className="px-4 py-3">{formatDate(c.issuedAt)}</td>
+                    <td className="px-4 py-3 capitalize">{c.status || "—"}</td>
                   </tr>
                 ))}
             </tbody>
